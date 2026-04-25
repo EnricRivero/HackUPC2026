@@ -114,7 +114,7 @@ export function getActionFromInput(input: string, repository: RepositoryState): 
         "Voy a guardar lo que has hecho ahora creando un nuevo Punto de Guardado entendible y seguro.",
       gitTranslation: ['git add .', 'git commit -m "Guardar progreso visual"'],
       accent: "from-emerald-400/80 to-teal-300/80",
-      previewChanges: examplesByAction.commit,
+      previewChanges: [...examplesByAction.commit],
     };
   }
 
@@ -137,7 +137,7 @@ export function getActionFromInput(input: string, repository: RepositoryState): 
         "Voy a subir tu último Punto de Guardado para que quede respaldado y sincronizado fuera de tu ordenador.",
       gitTranslation: [`git push origin ${repository.branchName}`],
       accent: "from-sky-400/80 to-cyan-300/80",
-      previewChanges: examplesByAction.push,
+      previewChanges: [...examplesByAction.push],
     };
   }
 
@@ -159,7 +159,7 @@ export function getActionFromInput(input: string, repository: RepositoryState): 
         "Voy a mostrarte cómo volver a un momento anterior de la historia sin que pierdas el contexto actual.",
       gitTranslation: ["git checkout <punto-anterior>", "git reset --soft HEAD~1"],
       accent: "from-amber-400/80 to-orange-300/80",
-      previewChanges: examplesByAction.restore,
+      previewChanges: [...examplesByAction.restore],
     };
   }
 
@@ -170,7 +170,7 @@ export function getActionFromInput(input: string, repository: RepositoryState): 
       "No identifiqué una intención exacta, así que propongo un guardado seguro como siguiente paso más útil para no perder trabajo.",
     gitTranslation: ['git add .', 'git commit -m "Guardado sugerido por GitEase"'],
     accent: "from-violet-400/80 to-indigo-300/80",
-    previewChanges: examplesByAction.commit,
+    previewChanges: [...examplesByAction.commit],
   };
 }
 
