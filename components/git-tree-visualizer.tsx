@@ -21,6 +21,7 @@ type GitTreeVisualizerProps = {
   pending?: RepositoryState;
   title?: string;
   compact?: boolean;
+  onCheckoutSelect?: (pointId: string) => void;
 };
 
 type PositionedPoint = {
@@ -30,6 +31,7 @@ type PositionedPoint = {
   color: string;
   branchIndex: number;
   isHead: boolean;
+  isClickable: boolean;
 };
 
 const iconMap = {
@@ -65,22 +67,23 @@ function buildGraph(repository: RepositoryState, compact: boolean) {
   const branchIndexMap = new Map(branchOrder.map((name, index) => [name, index]));
   const branchColorMap = new Map(repository.branches.map((branch) => [branch.name, branch.color]));
   const filteredIds = new Set(points.map((point) => point.id));
-  const xGap = compact ? 130 : 170;
-  const yGap = compact ? 94 : 128;
-  const paddingX = compact ? 80 : 120;
-  const paddingY = compact ? 50 : 70;
-  const width = Math.max(paddingX * 2 + Math.max(branchOrder.length - 1, 0) * xGap, compact ? 380 : 560);
-  const height = Math.max(paddingY * 2 + Math.max(points.length - 1, 0) * yGap, compact ? 240 : 420);
+  const xGap = compact ? 138 : 182;
+  const yGap = compact ? 78 : 112;
+  const paddingX = compact ? 86 : 128;
+  const paddingY = compact ? 88 : 132;
+  const width = Math.max(paddingX * 2 + Math.max(points.length - 1, 0) * xGap, compact ? 560 : 1080);
+  const height = Math.max(paddingY * 2 + Math.max(branchOrder.length - 1, 0) * yGap, compact ? 280 : 520);
 
   const positioned: PositionedPoint[] = points.map((point, index) => {
     const branchIndex = branchIndexMap.get(point.branch) ?? 0;
     return {
       point,
-      x: paddingX + branchIndex * xGap,
-      y: paddingY + index * yGap,
+      x: paddingX + index * xGap,
+      y: paddingY + branchIndex * yGap,
       color: branchColorMap.get(point.branch) ?? "#34d399",
       branchIndex,
       isHead: repository.headId === point.id,
+      isClickable: point.type === "commit" || point.type === "branch",
     };
   });
 
@@ -92,11 +95,11 @@ function buildGraph(repository: RepositoryState, compact: boolean) {
       return [];
     }
 
-    const controlY = (parent.y + entry.y) / 2;
+    const controlX = (parent.x + entry.x) / 2;
     return [
       {
         id: `${parent.point.id}-${entry.point.id}`,
-        d: `M ${parent.x} ${parent.y} C ${parent.x} ${controlY}, ${entry.x} ${controlY}, ${entry.x} ${entry.y}`,
+        d: `M ${parent.x} ${parent.y} C ${controlX} ${parent.y}, ${controlX} ${entry.y}, ${entry.x} ${entry.y}`,
         color: entry.color,
       },
     ];
@@ -112,11 +115,11 @@ function buildGraph(repository: RepositoryState, compact: boolean) {
       return [];
     }
 
-    const midX = (entry.x + target.x) / 2;
+    const midY = (entry.y + target.y) / 2;
     return [
       {
         id: `${entry.point.id}-${target.point.id}-target`,
-        d: `M ${entry.x} ${entry.y} Q ${midX} ${Math.min(entry.y, target.y) - 38}, ${target.x} ${target.y}`,
+        d: `M ${entry.x} ${entry.y} Q ${Math.max(entry.x, target.x) - 42} ${midY}, ${target.x} ${target.y}`,
         color: entry.color,
       },
     ];
@@ -138,6 +141,7 @@ export function GitTreeVisualizer({
   pending,
   title = "Mapa de Historia",
   compact = false,
+  onCheckoutSelect,
 }: GitTreeVisualizerProps) {
   const current = pending ?? repository;
   const [zoom, setZoom] = useState(1);
@@ -148,11 +152,11 @@ export function GitTreeVisualizer({
   };
 
   return (
-    <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5 shadow-[0_20px_80px_rgba(0,0,0,0.28)]">
+    <div className="flex h-full min-h-0 flex-col rounded-[28px] border border-white/10 bg-white/[0.03] p-5 shadow-[0_20px_80px_rgba(0,0,0,0.28)]">
       <div className="mb-5 flex items-start justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.28em] text-white/35">{title}</p>
-          <h2 className="mt-2 text-xl font-semibold text-white">Grafo de historia multiverso</h2>
+          <h2 className="mt-2 text-xl font-semibold text-white">Historial de version</h2>
         </div>
 
         <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white/60">
@@ -161,7 +165,7 @@ export function GitTreeVisualizer({
         </div>
       </div>
 
-      <div className="rounded-[26px] border border-white/10 bg-slate-950/45 p-4">
+      <div className="flex min-h-0 flex-1 flex-col rounded-[26px] border border-white/10 bg-slate-950/45 p-4">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             {current.branches.map((branch) => (
@@ -212,7 +216,7 @@ export function GitTreeVisualizer({
           ) : null}
         </div>
 
-        <div className="rounded-[22px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.05),transparent_45%),linear-gradient(180deg,rgba(15,23,42,0.7),rgba(2,6,23,0.9))] p-3">
+        <div className="flex min-h-0 flex-1 flex-col rounded-[22px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.05),transparent_45%),linear-gradient(180deg,rgba(15,23,42,0.7),rgba(2,6,23,0.9))] p-3">
           <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/45">
             <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">
               <ArrowRightLeft className="h-3.5 w-3.5" />
@@ -222,9 +226,15 @@ export function GitTreeVisualizer({
               <Sparkles className="h-3.5 w-3.5" />
               Head actual
             </span>
+            {!compact ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1">
+                <ArrowUpToLine className="h-3.5 w-3.5" />
+                Click en commit = checkout
+              </span>
+            ) : null}
           </div>
 
-          <div className="overflow-auto rounded-[18px] border border-white/8 bg-black/20">
+          <div className="min-h-0 flex-1 overflow-auto rounded-[18px] border border-white/8 bg-black/20">
             <div
               className="origin-top-left"
               style={{
@@ -240,23 +250,23 @@ export function GitTreeVisualizer({
                 aria-label="Git multiverse graph"
               >
                 {graph.branchOrder.map((branchName, index) => {
-                  const x = 120 + index * (compact ? 130 : 170);
+                  const y = 132 + index * (compact ? 78 : 112);
                   const color = graph.branchColorMap.get(branchName) ?? "#94a3b8";
                   return (
                     <g key={branchName}>
                       <line
-                        x1={x}
-                        x2={x}
-                        y1={24}
-                        y2={graph.height - 24}
+                        x1={36}
+                        x2={graph.width - 40}
+                        y1={y}
+                        y2={y}
                         stroke={withAlpha(color, "26")}
                         strokeWidth="1.5"
                         strokeDasharray="6 10"
                       />
                       <text
-                        x={x}
-                        y={24}
-                        textAnchor="middle"
+                        x={32}
+                        y={y - 16}
+                        textAnchor="start"
                         fill={color}
                         fontSize="12"
                         fontWeight="600"
@@ -290,10 +300,18 @@ export function GitTreeVisualizer({
                   />
                 ))}
 
-                {graph.points.map(({ point, x, y, color, isHead }) => {
+                {graph.points.map(({ point, x, y, color, isHead, isClickable }) => {
                   const Icon = iconMap[point.type];
                   return (
-                    <g key={point.id}>
+                    <g
+                      key={point.id}
+                      onClick={() => {
+                        if (!compact && isClickable && onCheckoutSelect) {
+                          onCheckoutSelect(point.id);
+                        }
+                      }}
+                      className={isClickable && !compact ? "cursor-pointer" : undefined}
+                    >
                       <circle
                         cx={x}
                         cy={y}
@@ -310,14 +328,16 @@ export function GitTreeVisualizer({
 
                       <foreignObject
                         x={x - 68}
-                        y={y + 18}
+                        y={y + 22}
                         width={136}
                         height={compact ? 72 : 92}
                       >
                         <motion.div
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
-                          className="rounded-2xl border border-white/10 bg-slate-950/78 p-3 text-center shadow-[0_14px_40px_rgba(0,0,0,0.28)] backdrop-blur-sm"
+                          className={`rounded-2xl border border-white/10 bg-slate-950/78 p-3 text-center shadow-[0_14px_40px_rgba(0,0,0,0.28)] backdrop-blur-sm transition ${
+                            isClickable && !compact ? "hover:border-white/20 hover:bg-slate-900/88" : ""
+                          }`}
                         >
                           <p className="truncate text-sm font-medium text-white">{point.label}</p>
                           <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-white/50">

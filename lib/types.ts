@@ -49,6 +49,12 @@ export type PendingAction = {
   backupLabel: string;
 };
 
+export type CheckoutSimulation = {
+  repository: RepositoryState;
+  selectedPoint: SavePoint;
+  message: string;
+};
+
 export type ChatMessage = {
   id: string;
   role: "assistant" | "user";

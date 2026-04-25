@@ -372,6 +372,25 @@ export function simulateAction(repository: RepositoryState, action: GitAction) {
   };
 }
 
+export function checkoutToPoint(repository: RepositoryState, pointId: string): RepositoryState {
+  const nextState = cloneRepository(repository);
+  const targetPoint = nextState.commits.find((point) => point.id === pointId);
+
+  if (!targetPoint) {
+    return nextState;
+  }
+
+  nextState.headId = targetPoint.id;
+  nextState.branchName = targetPoint.branch;
+  nextState.remoteStatus = `HEAD situado visualmente en ${targetPoint.label}`;
+  nextState.lastAction = "restore";
+  nextState.workingChanges = [`Vista activa movida a ${targetPoint.label}`];
+  nextState.stagedChanges = 0;
+  updateBranchHead(nextState, targetPoint.branch, targetPoint.id);
+
+  return nextState;
+}
+
 export function createAssistantConfirmation(action: GitAction): ChatMessage {
   return {
     id: crypto.randomUUID(),
@@ -391,6 +410,34 @@ export function createAssistantResult(action: GitAction, summary: string): ChatM
     content: `${action.label} preparado. ${summary}`,
     timestamp: new Date().toISOString(),
     kind: "result",
+  };
+}
+
+export function simulateCheckout(repository: RepositoryState, pointId: string) {
+  const nextState = cloneRepository(repository);
+  const targetPoint = nextState.commits.find((point) => point.id === pointId);
+
+  if (!targetPoint) {
+    return null;
+  }
+
+  nextState.headId = targetPoint.id;
+  nextState.branchName = targetPoint.branch;
+  nextState.remoteStatus = `HEAD movido a ${targetPoint.label} para explorar ${targetPoint.branch}`;
+
+  return {
+    nextState,
+    targetPoint,
+  };
+}
+
+export function createAssistantCheckoutMessage(point: SavePoint): ChatMessage {
+  return {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    content: `He movido el HEAD a ${point.label}. Ahora estás explorando la línea ${point.branch} como si hicieras un checkout visual.`,
+    timestamp: new Date().toISOString(),
+    kind: "normal",
   };
 }
 

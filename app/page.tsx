@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowUpRight, CloudUpload, GitBranch, ShieldCheck, Sparkles } from "lucide-react";
-import { ActionPreview } from "@/components/action-preview";
+import { CloudUpload, ShieldCheck, Sparkles } from "lucide-react";
 import { ChatPanel } from "@/components/chat-panel";
 import { ConfirmationModal } from "@/components/confirmation-modal";
 import { GitTreeVisualizer } from "@/components/git-tree-visualizer";
 import {
+  checkoutToPoint,
   createAssistantConfirmation,
   createAssistantResult,
   createInitialRepository,
@@ -164,6 +164,26 @@ export default function Home() {
     setPendingAction(null);
   };
 
+  const handleCheckoutSelect = (pointId: string) => {
+    const targetPoint = repository.commits.find((point) => point.id === pointId);
+    if (!targetPoint) {
+      return;
+    }
+
+    const nextRepository = checkoutToPoint(repository, pointId);
+    setRepository(nextRepository);
+    setMessages((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: `He movido el HEAD hacia ${targetPoint.label}. Es una simulación visual de checkout para que veas cómo cambiaría tu historia.`,
+        timestamp: new Date().toISOString(),
+        kind: "result",
+      },
+    ]);
+  };
+
   const handleMicClick = () => {
     if (typeof window === "undefined") {
       return;
@@ -239,45 +259,19 @@ export default function Home() {
           </div>
         </motion.header>
 
-        <section
-          className="grid gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_clamp(320px,28vw,400px)]"
-        >
-          <div className="flex min-h-0 flex-col gap-6">
-            <motion.section
-              className="min-h-0 lg:flex-[1.15]"
-              initial={{ opacity: 0, x: -18 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.05 }}
-            >
-              <GitTreeVisualizer repository={repository} pending={pendingAction?.after} />
-            </motion.section>
-
-            <motion.section
-              className="min-h-0 lg:flex-1"
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-            >
-              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Previsualizacion de accion</p>
-                  <h2 className="mt-1 text-lg font-medium text-white">Antes y despues del siguiente paso</h2>
-                </div>
-                {pendingAction && (
-                  <span className="inline-flex items-center gap-2 rounded-full border border-indigo-400/30 bg-indigo-400/10 px-3 py-1 text-xs font-medium text-indigo-100">
-                    <ArrowUpRight className="h-3.5 w-3.5" />
-                    Propuesta lista para confirmar
-                  </span>
-                )}
-              </div>
-
-              <ActionPreview
-                before={repository}
-                after={pendingAction?.after ?? repository}
-                action={pendingAction?.action ?? null}
-              />
-            </motion.section>
-          </div>
+        <section className="grid gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_clamp(320px,28vw,400px)]">
+          <motion.section
+            className="min-h-[720px] lg:min-h-0 lg:h-full"
+            initial={{ opacity: 0, x: -18 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.05 }}
+          >
+            <GitTreeVisualizer
+              repository={repository}
+              pending={pendingAction?.after}
+              onCheckoutSelect={handleCheckoutSelect}
+            />
+          </motion.section>
 
           <motion.aside
             className="min-h-[640px] rounded-[32px] border border-white/10 bg-white/6 p-5 shadow-xl shadow-slate-950/20 backdrop-blur-xl lg:min-h-0 lg:h-full lg:overflow-hidden"

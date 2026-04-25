@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, ShieldCheck, Sparkles } from "lucide-react";
 import { GitTreeVisualizer } from "@/components/git-tree-visualizer";
 import type { PendingAction } from "@/lib/types";
 
@@ -12,6 +12,25 @@ type ConfirmationModalProps = {
 };
 
 export function ConfirmationModal({ pending, onClose, onConfirm }: ConfirmationModalProps) {
+  const details = [
+    {
+      title: "Accion traducida",
+      value: pending.action.label,
+    },
+    {
+      title: "Resumen",
+      value: pending.summary,
+    },
+    {
+      title: "Copia segura",
+      value: pending.backupLabel,
+    },
+    {
+      title: "Comandos Git",
+      value: pending.action.gitTranslation.join(" + "),
+    },
+  ];
+
   return (
     <motion.div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/72 p-4 backdrop-blur-sm"
@@ -20,7 +39,7 @@ export function ConfirmationModal({ pending, onClose, onConfirm }: ConfirmationM
       exit={{ opacity: 0 }}
     >
       <motion.div
-        className="w-full max-w-6xl rounded-[2rem] border border-white/10 bg-slate-950/95 p-6 shadow-2xl shadow-cyan-500/10"
+        className="w-full max-w-[1500px] rounded-[2rem] border border-white/10 bg-slate-950/95 p-6 shadow-2xl shadow-cyan-500/10"
         initial={{ y: 18, opacity: 0, scale: 0.985 }}
         animate={{ y: 0, opacity: 1, scale: 1 }}
         exit={{ y: 10, opacity: 0, scale: 0.985 }}
@@ -38,26 +57,43 @@ export function ConfirmationModal({ pending, onClose, onConfirm }: ConfirmationM
               trabajo actual en el {pending.backupLabel} para que nunca lo pierdas. ¿Confirmas?
             </p>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
-            <span className="mr-2 text-slate-400">Accion traducida:</span>
-            <span className="font-medium text-white">{pending.summary}</span>
-          </div>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-[1.75rem] border border-white/10 bg-black/20 p-4">
-            <div className="mb-4 flex items-center gap-2 text-sm font-medium text-slate-200">
-              <Sparkles className="h-4 w-4 text-slate-400" />
-              Antes
-            </div>
-            <GitTreeVisualizer repository={pending.before} compact />
+        <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+          <div className="space-y-4">
+            {details.map((detail) => (
+              <div
+                key={detail.title}
+                className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4"
+              >
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">{detail.title}</p>
+                <p className="mt-3 text-sm leading-6 text-slate-100">{detail.value}</p>
+              </div>
+            ))}
           </div>
-          <div className="rounded-[1.75rem] border border-cyan-400/20 bg-cyan-400/5 p-4">
-            <div className="mb-4 flex items-center gap-2 text-sm font-medium text-cyan-100">
-              <Sparkles className="h-4 w-4 text-cyan-300" />
-              Despues
+
+          <div className="grid gap-4">
+            <div className="grid gap-4 xl:grid-cols-[1fr_auto_1fr]">
+              <div className="rounded-[1.75rem] border border-white/10 bg-black/20 p-4">
+                <div className="mb-4 flex items-center gap-2 text-sm font-medium text-slate-200">
+                  <Sparkles className="h-4 w-4 text-slate-400" />
+                  Antes
+                </div>
+                <GitTreeVisualizer repository={pending.before} compact />
+              </div>
+
+              <div className="flex items-center justify-center text-white/35">
+                <ArrowRight className="h-8 w-8" />
+              </div>
+
+              <div className="rounded-[1.75rem] border border-cyan-400/20 bg-cyan-400/5 p-4">
+                <div className="mb-4 flex items-center gap-2 text-sm font-medium text-cyan-100">
+                  <Sparkles className="h-4 w-4 text-cyan-300" />
+                  Despues
+                </div>
+                <GitTreeVisualizer repository={pending.after} compact />
+              </div>
             </div>
-            <GitTreeVisualizer repository={pending.after} compact />
           </div>
         </div>
 
