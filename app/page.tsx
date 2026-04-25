@@ -1,21 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CloudUpload, ShieldCheck, Sparkles } from "lucide-react";
+import { CloudUpload, FolderGit2, ShieldAlert, ShieldCheck, Sparkles } from "lucide-react";
 import { ChatPanel } from "@/components/chat-panel";
 import { ConfirmationModal } from "@/components/confirmation-modal";
 import { GitTreeVisualizer } from "@/components/git-tree-visualizer";
 import {
-  checkoutToPoint,
+  createAssistantCheckoutMessage,
   createAssistantConfirmation,
   createAssistantResult,
   createInitialRepository,
   createInitialMessages,
   getActionFromInput,
+  repositoryFromBackend,
   simulateAction,
 } from "@/lib/git-simulator";
-import type { ChatMessage, PendingAction, RepositoryState } from "@/lib/types";
+import type {
+  ChatMessage,
+  GitOperationResponse,
+  PendingAction,
+  RepoApiResponse,
+  RepositoryState,
+  RepoStatusResponse,
+} from "@/lib/types";
 
 declare global {
   interface Window {
@@ -50,13 +58,34 @@ const suggestionPhrases = [
   "Quiero volver a lo de ayer",
 ];
 
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, {
+    headers: {
+      "Content-Type": "application/json",
+    },
+    ...init,
+  });
+
+  const data = (await response.json()) as T & { error?: string };
+
+  if (!response.ok) {
+    throw new Error(data.error || "No se pudo completar la operación Git.");
+  }
+
+  return data;
+}
+
 export default function Home() {
   const [repository, setRepository] = useState<RepositoryState>(createInitialRepository());
   const [messages, setMessages] = useState<ChatMessage[]>(createInitialMessages());
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [input, setInput] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const [isLoadingRepo, setIsLoadingRepo] = useState(true);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const hasWelcomedRef = useRef(false);
 
   const stats = useMemo(
     () => [
@@ -77,6 +106,66 @@ export default function Home() {
       },
     ],
     [repository],
+  );
+
+  const addAssistantMessage = useCallback((content: string, kind: ChatMessage["kind"] = "normal") => {
+    setMessages((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content,
+        timestamp: new Date().toISOString(),
+        kind,
+      },
+    ]);
+  }, []);
+
+  const loadRepository = useCallback(
+    async (quiet = false) => {
+      if (!quiet) {
+        setIsLoadingRepo(true);
+      }
+
+      try {
+        const data = await apiFetch<RepoApiResponse>("/api/repo");
+        setRepository(data.repository);
+        setIsConnected(true);
+
+        if (!hasWelcomedRef.current) {
+          hasWelcomedRef.current = true;
+          setMessages([
+            {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              content:
+                `Conectado con tu repositorio real en ${data.repository.repoPath ?? "/workspace"}.\n\n` +
+                `Rama activa: ${data.repository.branchName}. ` +
+                `Tienes ${data.repository.commits.length} puntos visibles en la historia y ` +
+                `${data.repository.changedFiles?.length ?? 0} archivo(s) con cambios.`,
+              timestamp: new Date().toISOString(),
+              kind: "normal",
+            },
+          ]);
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "No se pudo conectar con la capa de Git real.";
+        setIsConnected(false);
+        if (!quiet) {
+          addAssistantMessage(
+            `No he podido conectar con Git real todavía.\n\n${message}\n\n` +
+              "Seguiré mostrando la interfaz, pero las operaciones reales no estarán disponibles hasta que el repositorio sea accesible.",
+            "fallback",
+          );
+        }
+      } finally {
+        if (!quiet) {
+          setIsLoadingRepo(false);
+        }
+      }
+    },
+    [addAssistantMessage],
   );
 
   useEffect(() => {
@@ -122,6 +211,38 @@ export default function Home() {
     recognitionRef.current = recognition;
   }, []);
 
+  useEffect(() => {
+    void loadRepository(false);
+  }, [loadRepository]);
+
+  useEffect(() => {
+    const interval = window.setInterval(async () => {
+      if (!isConnected || pendingAction || isExecuting) {
+        return;
+      }
+
+      try {
+        const status = await apiFetch<RepoStatusResponse>("/api/status");
+        setRepository((current) => ({
+          ...current,
+          branchName: status.branchName,
+          headId: status.headId,
+          stagedChanges: status.stagedChanges,
+          workingChanges: status.workingChanges,
+          changedFiles: status.changedFiles,
+          remoteStatus: status.remoteStatus,
+          isDetachedHead: status.isDetachedHead,
+        }));
+      } catch {
+        // silent background polling failure
+      }
+    }, 8000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [isConnected, pendingAction, isExecuting]);
+
   const handleSubmit = (input: string) => {
     const trimmed = input.trim();
 
@@ -144,20 +265,63 @@ export default function Home() {
       action,
       before: repository,
       after: simulation.nextState,
-      summary: simulation.summary,
+      summary:
+        simulation.summary ||
+        `Se ejecutará ${action.label.toLowerCase()} sobre el repositorio real y luego se refrescará el historial.`,
       backupLabel: simulation.backupLabel,
     });
     setInput("");
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!pendingAction) {
       return;
     }
 
-    setRepository(pendingAction.after);
-    setMessages((current) => [...current, createAssistantResult(pendingAction.action, pendingAction.summary)]);
-    setPendingAction(null);
+    setIsExecuting(true);
+
+    try {
+      let response: GitOperationResponse;
+      if (pendingAction.action.type === "commit") {
+        const headPoint =
+          repository.commits.find((point) => point.id === repository.headId) ?? repository.commits.at(-1);
+        const commitMessage = headPoint
+          ? `GitEase: ${headPoint.label}`
+          : "GitEase: Guardado desde lenguaje natural";
+
+        response = await apiFetch<GitOperationResponse>("/api/commit", {
+          method: "POST",
+          body: JSON.stringify({ message: commitMessage }),
+        });
+      } else if (pendingAction.action.type === "push") {
+        response = await apiFetch<GitOperationResponse>("/api/push", {
+          method: "POST",
+        });
+      } else if (pendingAction.action.type === "restore") {
+        response = await apiFetch<GitOperationResponse>("/api/reset", {
+          method: "POST",
+          body: JSON.stringify({ mode: "soft" }),
+        });
+      } else {
+        const branchName = pendingAction.action.gitTranslation[0]?.split(" ").at(-1) ?? "idea-gitease";
+        response = await apiFetch<GitOperationResponse>("/api/branch", {
+          method: "POST",
+          body: JSON.stringify({ name: branchName }),
+        });
+      }
+
+      setRepository(response.repository);
+      setMessages((current) => [
+        ...current,
+        createAssistantResult(pendingAction.action, response.message),
+      ]);
+      setPendingAction(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo ejecutar la operación Git.";
+      addAssistantMessage(`He intentado ejecutar la acción real, pero Git devolvió este error:\n\n${message}`, "fallback");
+    } finally {
+      setIsExecuting(false);
+    }
   };
 
   const handleClose = () => {
@@ -170,18 +334,23 @@ export default function Home() {
       return;
     }
 
-    const nextRepository = checkoutToPoint(repository, pointId);
-    setRepository(nextRepository);
-    setMessages((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: `He movido el HEAD hacia ${targetPoint.label}. Es una simulación visual de checkout para que veas cómo cambiaría tu historia.`,
-        timestamp: new Date().toISOString(),
-        kind: "result",
-      },
-    ]);
+    void (async () => {
+      try {
+        setIsExecuting(true);
+        const response = await apiFetch<GitOperationResponse>("/api/checkout", {
+          method: "POST",
+          body: JSON.stringify({ target: pointId }),
+        });
+        setRepository(response.repository);
+        setMessages((current) => [...current, createAssistantCheckoutMessage(targetPoint)]);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "No se pudo mover el HEAD a ese punto del historial.";
+        addAssistantMessage(`No he podido hacer el checkout real hacia ${targetPoint.label}.\n\n${message}`, "fallback");
+      } finally {
+        setIsExecuting(false);
+      }
+    })();
   };
 
   const handleMicClick = () => {
@@ -228,17 +397,29 @@ export default function Home() {
           animate={{ opacity: 1, y: 0 }}
         >
           <div className="space-y-3">
-            <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
-              <Sparkles className="h-3.5 w-3.5" />
-              GitEase MVP
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
+                <Sparkles className="h-3.5 w-3.5" />
+                GitEase MVP
+              </span>
+              <span
+                className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${
+                  isConnected
+                    ? "border border-cyan-400/30 bg-cyan-400/10 text-cyan-100"
+                    : "border border-amber-400/30 bg-amber-400/10 text-amber-100"
+                }`}
+              >
+                {isConnected ? <FolderGit2 className="h-3.5 w-3.5" /> : <ShieldAlert className="h-3.5 w-3.5" />}
+                {isLoadingRepo ? "Conectando con Git..." : isConnected ? "Git real conectado" : "Modo desconectado"}
+              </span>
+            </div>
             <div>
               <h1 className="text-3xl font-semibold tracking-tight text-white md:text-4xl">
                 Git explicado como si fuera una historia.
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
                 Traduce voz o lenguaje natural a acciones seguras, muestra una copia de seguridad antes de
-                ejecutar y visualiza la evolucion del proyecto con puntos de guardado intuitivos.
+                ejecutar y sincroniza el historial real del proyecto con puntos de guardado intuitivos.
               </p>
             </div>
           </div>

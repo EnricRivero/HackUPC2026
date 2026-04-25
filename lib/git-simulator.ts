@@ -1,4 +1,11 @@
-import type { BranchTrack, ChatMessage, GitAction, RepositoryState, SavePoint } from "./types";
+import type {
+  BranchTrack,
+  ChatMessage,
+  GitAction,
+  GitChangedFile,
+  RepositoryState,
+  SavePoint,
+} from "./types";
 
 const examplesByAction = {
   commit: [
@@ -141,6 +148,133 @@ export function createInitialMessages(): ChatMessage[] {
       kind: "normal",
     },
   ];
+}
+
+function branchColorForIndex(index: number) {
+  return branchPalette[index % branchPalette.length];
+}
+
+function deriveLabel(point: {
+  type: SavePoint["type"];
+  branch: string;
+  msg?: string;
+  hash?: string;
+}) {
+  if (point.type === "push") {
+    return point.msg || "Sincronizado";
+  }
+
+  if (point.type === "branch") {
+    return point.msg || `Rama ${point.branch}`;
+  }
+
+  return point.msg || point.hash || "Punto de guardado";
+}
+
+function deriveDescription(point: {
+  type: SavePoint["type"];
+  msg?: string;
+  author?: string;
+  branch: string;
+}) {
+  if (point.type === "push") {
+    return point.msg || "Copia compartida en la nube";
+  }
+
+  if (point.type === "branch") {
+    return point.msg || `Cambio de contexto hacia ${point.branch}`;
+  }
+
+  if (point.author) {
+    return `${point.msg || "Sin mensaje"} · ${point.author}`;
+  }
+
+  return point.msg || "Guardado real del repositorio";
+}
+
+type GitBackendCommit = {
+  id: string;
+  hash: string;
+  msg: string;
+  time: string;
+  author?: string;
+  branch?: string;
+  type?: SavePoint["type"];
+  parentId?: string;
+  targetId?: string;
+};
+
+type GitBackendBranch = {
+  name: string;
+  color?: string;
+  headId: string;
+  baseId?: string;
+};
+
+export function repositoryFromBackend(data: {
+  branchName: string;
+  commits: GitBackendCommit[];
+  branches: GitBackendBranch[];
+  changedFiles?: GitChangedFile[];
+  stagedChanges: number;
+  pushedPointId?: string;
+  remoteStatus: string;
+  headId: string;
+  repoPath?: string;
+  hasRemote?: boolean;
+  remoteUrl?: string | null;
+  isDetachedHead?: boolean;
+}): RepositoryState {
+  const commits = data.commits.map((commit) =>
+    createPoint(
+      commit.id,
+      deriveLabel({
+        type: commit.type ?? "commit",
+        branch: commit.branch ?? data.branchName,
+        msg: commit.msg,
+        hash: commit.hash,
+      }),
+      deriveDescription({
+        type: commit.type ?? "commit",
+        msg: commit.msg,
+        author: commit.author,
+        branch: commit.branch ?? data.branchName,
+      }),
+      commit.type ?? "commit",
+      commit.branch ?? data.branchName,
+      commit.time,
+      commit.parentId,
+      commit.targetId,
+    ),
+  );
+
+  const branches = data.branches.map((branch, index) => ({
+    name: branch.name,
+    headId: branch.headId,
+    baseId: branch.baseId,
+    color: branch.color ?? branchColorForIndex(index),
+  }));
+
+  const workingChanges =
+    data.changedFiles?.map((file) => `${file.status} ${file.file}`) ??
+    (data.stagedChanges > 0 ? ["Cambios detectados en el repositorio"] : []);
+
+  return {
+    branchName: data.branchName,
+    commits,
+    branches,
+    changedFiles: data.changedFiles ?? [],
+    workingChanges,
+    stagedChanges: data.stagedChanges,
+    pushedPointId: data.pushedPointId,
+    remoteStatus: data.remoteStatus,
+    lastAction: "idle",
+    headId: data.headId,
+    repoPath: data.repoPath,
+    hasRemote: data.hasRemote,
+    remoteUrl: data.remoteUrl,
+    isDetachedHead: data.isDetachedHead,
+  };
 }
 
 export function getActionFromInput(input: string, repository: RepositoryState): GitAction {
@@ -436,6 +570,23 @@ export function createAssistantCheckoutMessage(point: SavePoint): ChatMessage {
     id: crypto.randomUUID(),
     role: "assistant",
     content: `He movido el HEAD a ${point.label}. Ahora estás explorando la línea ${point.branch} como si hicieras un checkout visual.`,
+    timestamp: new Date().toISOString(),
+    kind: "normal",
+  };
+}
+
+export function createSyncStatusMessage(repository: RepositoryState): ChatMessage {
+  const repoName = repository.repoPath?.split(/[/\\]/).pop() ?? "repositorio";
+  const remoteText = repository.hasRemote
+    ? `Remoto conectado${repository.remoteUrl ? ` a ${repository.remoteUrl}` : ""}.`
+    : "Todavía no hay remoto configurado.";
+
+  return {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    content:
+      `He conectado GitEase con el repositorio real **${repoName}** en la rama **${repository.branchName}**. ` +
+      `${remoteText} Ahora puedo leer el historial, detectar cambios sin guardar y ejecutar acciones reales de Git con tu confirmación.`,
     timestamp: new Date().toISOString(),
     kind: "normal",
   };
