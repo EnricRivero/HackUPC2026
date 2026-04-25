@@ -569,7 +569,7 @@ export function createAssistantCheckoutMessage(point: SavePoint): ChatMessage {
   return {
     id: crypto.randomUUID(),
     role: "assistant",
-    content: `He movido el HEAD a ${point.label}. Ahora estás explorando la línea ${point.branch} como si hicieras un checkout visual.`,
+    content: `He resaltado ${point.label} como referencia visual. La línea temporal principal no cambia; solo estás explorando ese punto de la historia.`,
     timestamp: new Date().toISOString(),
     kind: "normal",
   };

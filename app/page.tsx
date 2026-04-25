@@ -7,13 +7,12 @@ import { ChatPanel } from "@/components/chat-panel";
 import { ConfirmationModal } from "@/components/confirmation-modal";
 import { GitTreeVisualizer } from "@/components/git-tree-visualizer";
 import {
-  createAssistantCheckoutMessage,
+  checkoutToPoint,
   createAssistantConfirmation,
   createAssistantResult,
   createInitialRepository,
   createInitialMessages,
   getActionFromInput,
-  repositoryFromBackend,
   simulateAction,
 } from "@/lib/git-simulator";
 import type {
@@ -222,26 +221,16 @@ export default function Home() {
       }
 
       try {
-        const status = await apiFetch<RepoStatusResponse>("/api/status");
-        setRepository((current) => ({
-          ...current,
-          branchName: status.branchName,
-          headId: status.headId,
-          stagedChanges: status.stagedChanges,
-          workingChanges: status.workingChanges,
-          changedFiles: status.changedFiles,
-          remoteStatus: status.remoteStatus,
-          isDetachedHead: status.isDetachedHead,
-        }));
+        await loadRepository(true);
       } catch {
-        // silent background polling failure
+        // silent polling failure
       }
     }, 8000);
 
     return () => {
       window.clearInterval(interval);
     };
-  }, [isConnected, pendingAction, isExecuting]);
+  }, [isConnected, pendingAction, isExecuting, loadRepository]);
 
   const handleSubmit = (input: string) => {
     const trimmed = input.trim();
@@ -265,9 +254,7 @@ export default function Home() {
       action,
       before: repository,
       after: simulation.nextState,
-      summary:
-        simulation.summary ||
-        `Se ejecutará ${action.label.toLowerCase()} sobre el repositorio real y luego se refrescará el historial.`,
+      summary: simulation.summary,
       backupLabel: simulation.backupLabel,
     });
     setInput("");
@@ -283,12 +270,7 @@ export default function Home() {
     try {
       let response: GitOperationResponse;
       if (pendingAction.action.type === "commit") {
-        const headPoint =
-          repository.commits.find((point) => point.id === repository.headId) ?? repository.commits.at(-1);
-        const commitMessage = headPoint
-          ? `GitEase: ${headPoint.label}`
-          : "GitEase: Guardado desde lenguaje natural";
-
+        const commitMessage = input.trim() || "GitEase: Guardado desde lenguaje natural";
         response = await apiFetch<GitOperationResponse>("/api/commit", {
           method: "POST",
           body: JSON.stringify({ message: commitMessage }),
@@ -310,12 +292,10 @@ export default function Home() {
         });
       }
 
-      setRepository(response.repository);
-      setMessages((current) => [
-        ...current,
-        createAssistantResult(pendingAction.action, response.message),
-      ]);
+        setRepository(response.repository);
+      setMessages((current) => [...current, createAssistantResult(pendingAction.action, response.message)]);
       setPendingAction(null);
+      await loadRepository(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo ejecutar la operación Git.";
       addAssistantMessage(`He intentado ejecutar la acción real, pero Git devolvió este error:\n\n${message}`, "fallback");
@@ -334,23 +314,18 @@ export default function Home() {
       return;
     }
 
-    void (async () => {
-      try {
-        setIsExecuting(true);
-        const response = await apiFetch<GitOperationResponse>("/api/checkout", {
-          method: "POST",
-          body: JSON.stringify({ target: pointId }),
-        });
-        setRepository(response.repository);
-        setMessages((current) => [...current, createAssistantCheckoutMessage(targetPoint)]);
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "No se pudo mover el HEAD a ese punto del historial.";
-        addAssistantMessage(`No he podido hacer el checkout real hacia ${targetPoint.label}.\n\n${message}`, "fallback");
-      } finally {
-        setIsExecuting(false);
-      }
-    })();
+    const nextRepository = checkoutToPoint(repository, pointId);
+    setRepository(nextRepository);
+    setMessages((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: `He movido el HEAD hacia ${targetPoint.label}. Es una simulación visual de checkout para que veas cómo cambiaría tu historia.`,
+        timestamp: new Date().toISOString(),
+        kind: "result",
+      },
+    ]);
   };
 
   const handleMicClick = () => {
@@ -388,6 +363,18 @@ export default function Home() {
     }, 1200);
   };
 
+  const statusBadge = isConnected
+    ? {
+        icon: <FolderGit2 className="h-3.5 w-3.5" />,
+        text: isLoadingRepo ? "Conectando con Git..." : "Git real conectado",
+        className: "border border-cyan-400/30 bg-cyan-400/10 text-cyan-100",
+      }
+    : {
+        icon: <ShieldAlert className="h-3.5 w-3.5" />,
+        text: "Modo desconectado",
+        className: "border border-amber-400/30 bg-amber-400/10 text-amber-100",
+      };
+
   return (
     <main className="min-h-[100dvh] bg-[radial-gradient(circle_at_top,rgba(99,102,241,0.14),transparent_35%),linear-gradient(180deg,#07111f,#020617)] px-4 py-6 text-slate-100 sm:px-6 lg:h-[100dvh] lg:overflow-hidden xl:px-8">
       <div className="mx-auto flex h-full w-full max-w-[1720px] flex-col gap-6">
@@ -402,15 +389,9 @@ export default function Home() {
                 <Sparkles className="h-3.5 w-3.5" />
                 GitEase MVP
               </span>
-              <span
-                className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${
-                  isConnected
-                    ? "border border-cyan-400/30 bg-cyan-400/10 text-cyan-100"
-                    : "border border-amber-400/30 bg-amber-400/10 text-amber-100"
-                }`}
-              >
-                {isConnected ? <FolderGit2 className="h-3.5 w-3.5" /> : <ShieldAlert className="h-3.5 w-3.5" />}
-                {isLoadingRepo ? "Conectando con Git..." : isConnected ? "Git real conectado" : "Modo desconectado"}
+              <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${statusBadge.className}`}>
+                {statusBadge.icon}
+                {statusBadge.text}
               </span>
             </div>
             <div>
@@ -419,7 +400,7 @@ export default function Home() {
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
                 Traduce voz o lenguaje natural a acciones seguras, muestra una copia de seguridad antes de
-                ejecutar y sincroniza el historial real del proyecto con puntos de guardado intuitivos.
+                ejecutar y visualiza la evolucion del proyecto con puntos de guardado intuitivos.
               </p>
             </div>
           </div>
