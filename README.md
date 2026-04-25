@@ -1,6 +1,6 @@
 # HACKUPC 2026
 
-# GitEase
+## GitEase
 
 GitEase es una herramienta diseñada para mejorar la comprensión del uso de Git. Surge de la necesidad de ofrecer mayor claridad sobre las acciones que se ejecutan en un repositorio, evitando que el usuario trabaje “a ciegas” con comandos cuyo impacto no siempre es evidente.
 
@@ -8,7 +8,7 @@ El proyecto propone una capa intermedia entre el usuario y Git, proporcionando e
 
 ---
 
-## Descripción
+### Descripción
 
 GitEase permite al usuario expresar acciones relacionadas con Git de forma natural. A partir de esa entrada, el sistema:
 
@@ -21,7 +21,7 @@ De este modo, se fomenta un uso más consciente y seguro de Git, especialmente �
 
 ---
 
-## Ejemplo de funcionamiento
+### Ejemplo de funcionamiento
 
 Entrada del usuario:
 > Quiero subir mis cambios al repositorio
