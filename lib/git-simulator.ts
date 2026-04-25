@@ -38,6 +38,9 @@ const examplesByAction = {
 const containsAny = (text: string, candidates: string[]) =>
   candidates.some((candidate) => text.includes(candidate));
 
+const matchesAny = (text: string, patterns: RegExp[]) =>
+  patterns.some((pattern) => pattern.test(text));
+
 function isoMinutesAgo(minutesAgo: number) {
   return new Date(Date.now() - minutesAgo * 60_000).toISOString();
 }
@@ -289,6 +292,29 @@ export function repositoryFromBackend(data: {
 
 export function getActionFromInput(input: string, repository: RepositoryState): GitAction | null {
   const normalized = input.trim().toLowerCase();
+
+  const explicitMergeIntoMain = matchesAny(normalized, [
+    /\bhaz merge con main\b/,
+    /\bmerge con main\b/,
+    /\bfusiona .* con main\b/,
+    /\bfusiona .* en main\b/,
+    /\bmergea .* en main\b/,
+    /\bmete .* en main\b/,
+  ]);
+
+  if (explicitMergeIntoMain) {
+    const currentBranch = repository.branchName;
+    return {
+      type: "merge",
+      label: "Fusionar rama actual en main",
+      naturalExplanation:
+        "Voy a cambiar a main y fusionar allí la rama actual para que sus cambios entren en la línea principal.",
+      gitTranslation: ["git checkout main", `git merge ${currentBranch}`],
+      accent: "from-emerald-400/80 to-cyan-300/80",
+      previewChanges: [...examplesByAction.merge],
+      targetBranch: currentBranch,
+    };
+  }
 
   if (
     containsAny(normalized, [
