@@ -205,7 +205,7 @@ export function GitTreeVisualizer({
   const { ref: viewportRef, size: viewportSize } = useElementSize<HTMLDivElement>();
 
   const setSafeZoom = (delta: number) => {
-    setZoomFactor((currentZoom) => Math.min(1.8, Math.max(0.72, Number((currentZoom + delta).toFixed(2)))));
+    setZoomFactor((currentZoom) => Math.min(3, Math.max(0.72, Number((currentZoom + delta).toFixed(2)))));
   };
 
   const fitScale = compact ? 1 : viewportSize.width > 0 ? viewportSize.width / graph.width : 1;

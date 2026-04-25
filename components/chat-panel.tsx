@@ -30,14 +30,14 @@ export function ChatPanel({
     }
 
     if (message.subject) {
-      return `Gitly · ${message.subject}`;
+      return `GitGuide · ${message.subject}`;
     }
 
     if (message.kind === "fallback") {
-      return "Gitly · Error";
+      return "GitGuide · Error";
     }
 
-    return "Gitly";
+    return "GitGuide";
   };
 
   useEffect(() => {
@@ -58,7 +58,7 @@ export function ChatPanel({
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
-            Asistente GitEase
+            Asistente GitGuide
           </p>
           <h2 className="mt-2 text-2xl font-semibold text-white">
             Habla como una persona.

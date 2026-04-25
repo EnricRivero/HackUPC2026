@@ -1,7 +1,7 @@
 {
   "name": "workspace",
   "version": "1.0.0",
-  "description": "GitEase MVP - human friendly Git interface",
+  "description": "GitGuide MVP - human friendly Git interface",
   "private": true,
   "scripts": {
     "dev": "next dev",

@@ -376,7 +376,7 @@ export function pushCurrentBranch() {
 export function resetHeadSoft() {
   assertRepository();
 
-  const backupBranch = `gitease-backup-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}`;
+  const backupBranch = `gitguide-backup-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}`;
   runGit(["branch", backupBranch]);
 
   const reset = runGit(["reset", "--soft", "HEAD~1"]);

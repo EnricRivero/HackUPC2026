@@ -105,7 +105,7 @@ export default function Home() {
     (
       content: string,
       kind: ChatMessage["kind"] = "normal",
-      subject = kind === "fallback" ? 'Gitly "Error"' : 'Gitly "Estado"',
+      subject = kind === "fallback" ? 'GitGuide "Error"' : 'GitGuide "Estado"',
     ) => {
     setMessages((current) => [
       ...current,
@@ -145,7 +145,7 @@ export default function Home() {
                 `Tienes ${data.repository.commits.length} puntos visibles en la historia y ` +
                 `${data.repository.changedFiles?.length ?? 0} archivo(s) con cambios.`,
               timestamp: new Date().toISOString(),
-              subject: 'Gitly "Sincronización"',
+              subject: 'GitGuide "Sincronización"',
               kind: "normal",
             },
           ]);
@@ -200,7 +200,7 @@ export default function Home() {
           role: "assistant",
           content: `Te escuché decir: "${transcript}". Puedes enviarlo o editarlo antes de confirmar.`,
           timestamp: new Date().toISOString(),
-          subject: 'Gitly "Voz detectada"',
+          subject: 'GitGuide "Voz detectada"',
           kind: "transcript",
         },
       ]);
@@ -268,7 +268,7 @@ export default function Home() {
           content:
             "No hay cambios para guardar ahora mismo. Guarda primero algún archivo en tu editor y luego vuelve a pedírmelo.",
           timestamp: new Date().toISOString(),
-          subject: 'Gitly "Error de guardado"',
+          subject: 'GitGuide "Error de guardado"',
           kind: "fallback",
         },
       ]);
@@ -299,7 +299,7 @@ export default function Home() {
     try {
       let response: GitOperationResponse;
       if (pendingAction.action.type === "commit") {
-        const commitMessage = input.trim() || "GitEase: Guardado desde lenguaje natural";
+        const commitMessage = input.trim() || "GitGuide: Guardado desde lenguaje natural";
         response = await apiFetch<GitOperationResponse>("/api/commit", {
           method: "POST",
           body: JSON.stringify({ message: commitMessage }),
@@ -328,7 +328,7 @@ export default function Home() {
           }),
         });
       } else {
-        const branchName = pendingAction.action.gitTranslation[0]?.split(" ").at(-1) ?? "idea-gitease";
+        const branchName = pendingAction.action.gitTranslation[0]?.split(" ").at(-1) ?? "idea-gitguide";
         response = await apiFetch<GitOperationResponse>("/api/branch", {
           method: "POST",
           body: JSON.stringify({ name: branchName }),
@@ -366,7 +366,7 @@ export default function Home() {
         role: "assistant",
         content: `He movido el HEAD hacia ${targetPoint.label}. Es una simulación visual de checkout para que veas cómo cambiaría tu historia.`,
         timestamp: new Date().toISOString(),
-        subject: 'Gitly "Checkout visual"',
+        subject: 'GitGuide "Checkout visual"',
         kind: "result",
       },
     ]);
@@ -400,7 +400,7 @@ export default function Home() {
           role: "assistant",
           content: `Modo demo: he simulado la voz con "${fallbackTranscript}".`,
           timestamp: new Date().toISOString(),
-          subject: 'Gitly "Voz demo"',
+          subject: 'GitGuide "Voz demo"',
           kind: "transcript",
         },
       ]);
@@ -432,7 +432,7 @@ export default function Home() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
                 <Sparkles className="h-3.5 w-3.5" />
-                Gitly
+                GitGuide
               </span>
               <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${statusBadge.className}`}>
                 {statusBadge.icon}
@@ -441,7 +441,7 @@ export default function Home() {
             </div>
             <div>
               <h1 className="text-3xl font-semibold tracking-tight text-white md:text-4xl">
-                Gitly
+                GitGuide
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
                 Historial de versiones de tu proyecto
