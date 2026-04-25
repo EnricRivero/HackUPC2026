@@ -337,3 +337,43 @@ export function checkoutReference(reference: string) {
 
   return successfulOperation(`HEAD movido a ${reference}.`);
 }
+
+export function mergeBranch(sourceBranch: string) {
+  assertRepository();
+
+  const currentBranch = currentBranchName();
+  if (!currentBranch || currentBranch === "HEAD") {
+    throw new Error("Debes estar en una rama real para poder fusionarla en main.");
+  }
+
+  const safeBranch = sourceBranch.trim() || currentBranch;
+
+  const checkoutMain = runGit(["checkout", "main"]);
+  if (!checkoutMain.ok) {
+    throw new Error(checkoutMain.stderr || "No pude cambiar a main antes del merge.");
+  }
+
+  const merge = runGit(["merge", safeBranch]);
+  if (!merge.ok) {
+    runGit(["checkout", currentBranch]);
+    throw new Error(merge.stderr || `No pude fusionar la rama ${safeBranch} dentro de main.`);
+  }
+
+  return successfulOperation(`He fusionado ${safeBranch} dentro de main.`);
+}
+
+export function rebaseOnto(sourceBranch: string) {
+  assertRepository();
+
+  const safeBranch = sourceBranch.trim();
+  if (!safeBranch) {
+    throw new Error("Debes indicar una rama base para hacer rebase.");
+  }
+
+  const result = runGit(["rebase", safeBranch]);
+  if (!result.ok) {
+    throw new Error(result.stderr || `No pude rebasar sobre ${safeBranch}.`);
+  }
+
+  return successfulOperation(`He rehecho la historia actual sobre ${safeBranch}.`);
+}
