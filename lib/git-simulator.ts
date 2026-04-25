@@ -292,6 +292,54 @@ export function getActionFromInput(input: string, repository: RepositoryState): 
 
   if (
     containsAny(normalized, [
+      "merge",
+      "fusiona",
+      "fusionar",
+      "unir ramas",
+      "mezcla ramas",
+      "combina ramas",
+    ])
+  ) {
+    const currentBranch = repository.branchName;
+    return {
+      type: "merge",
+      label: "Fusionar rama actual en main",
+      naturalExplanation:
+        "Voy a llevar tu rama actual hacia main y fusionarla allí para que sus cambios entren en la línea principal.",
+      gitTranslation: [`git checkout main`, `git merge ${currentBranch}`],
+      accent: "from-emerald-400/80 to-cyan-300/80",
+      previewChanges: [...examplesByAction.merge],
+      targetBranch: currentBranch,
+    };
+  }
+
+  if (
+    containsAny(normalized, [
+      "rebase",
+      "rebasa",
+      "reorganiza la rama",
+      "reordena commits",
+      "pon esto encima",
+    ])
+  ) {
+    const ontoBranch =
+      repository.branchName === "main"
+        ? repository.branches.find((branch) => branch.name !== "main")?.name ?? "main"
+        : "main";
+    return {
+      type: "rebase",
+      label: "Reordenar con rebase",
+      naturalExplanation:
+        "Voy a reubicar tu rama sobre una base más reciente para que la historia quede más lineal.",
+      gitTranslation: [`git rebase ${ontoBranch}`],
+      accent: "from-violet-400/80 to-fuchsia-300/80",
+      previewChanges: [...examplesByAction.rebase],
+      targetBranch: ontoBranch,
+    };
+  }
+
+  if (
+    containsAny(normalized, [
       "guarda",
       "guardar",
       "hecho ahora",
@@ -379,55 +427,6 @@ export function getActionFromInput(input: string, repository: RepositoryState): 
       gitTranslation: ["git checkout <punto-anterior>", "git reset --soft HEAD~1"],
       accent: "from-amber-400/80 to-orange-300/80",
       previewChanges: [...examplesByAction.restore],
-    };
-  }
-
-  if (
-    containsAny(normalized, [
-      "merge",
-      "fusiona",
-      "fusionar",
-      "unir ramas",
-      "mezcla ramas",
-      "combina ramas",
-    ])
-  ) {
-    const candidateBranch =
-      repository.branches.find((branch) => branch.name !== repository.branchName)?.name ?? "rama-secundaria";
-    return {
-      type: "merge",
-      label: "Fusionar ramas",
-      naturalExplanation:
-        "Voy a unir otra rama con tu línea principal para juntar ambos caminos en un mismo historial.",
-      gitTranslation: [`git merge ${candidateBranch}`],
-      accent: "from-emerald-400/80 to-cyan-300/80",
-      previewChanges: [...examplesByAction.merge],
-      targetBranch: candidateBranch,
-    };
-  }
-
-  if (
-    containsAny(normalized, [
-      "rebase",
-      "rebasa",
-      "reorganiza la rama",
-      "reordena commits",
-      "pon esto encima",
-    ])
-  ) {
-    const ontoBranch =
-      repository.branchName === "main"
-        ? repository.branches.find((branch) => branch.name !== "main")?.name ?? "main"
-        : "main";
-    return {
-      type: "rebase",
-      label: "Reordenar con rebase",
-      naturalExplanation:
-        "Voy a reubicar tu rama sobre una base más reciente para que la historia quede más lineal.",
-      gitTranslation: [`git rebase ${ontoBranch}`],
-      accent: "from-violet-400/80 to-fuchsia-300/80",
-      previewChanges: [...examplesByAction.rebase],
-      targetBranch: ontoBranch,
     };
   }
 

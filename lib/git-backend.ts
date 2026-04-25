@@ -341,15 +341,12 @@ export function checkoutReference(reference: string) {
 export function mergeBranch(sourceBranch: string) {
   assertRepository();
 
-  const safeBranch = sourceBranch.trim();
-  if (!safeBranch) {
-    throw new Error("Debes indicar una rama para hacer merge.");
-  }
-
   const currentBranch = currentBranchName();
   if (!currentBranch || currentBranch === "HEAD") {
     throw new Error("Debes estar en una rama real para poder fusionarla en main.");
   }
+
+  const safeBranch = sourceBranch.trim() || currentBranch;
 
   const checkoutMain = runGit(["checkout", "main"]);
   if (!checkoutMain.ok) {
