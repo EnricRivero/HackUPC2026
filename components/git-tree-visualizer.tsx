@@ -200,13 +200,7 @@ export function GitTreeVisualizer({
     setZoomFactor((currentZoom) => Math.min(1.8, Math.max(0.72, Number((currentZoom + delta).toFixed(2)))));
   };
 
-  const fitScale = compact
-    ? 1
-    : Math.min(
-        1,
-        viewportSize.width > 0 ? viewportSize.width / graph.width : 1,
-        viewportSize.height > 0 ? viewportSize.height / graph.height : 1,
-      );
+  const fitScale = compact ? 1 : viewportSize.width > 0 ? viewportSize.width / graph.width : 1;
   const appliedScale = compact ? 1 : fitScale * zoomFactor;
   const scaledWidth = graph.width * appliedScale;
   const scaledHeight = graph.height * appliedScale;
@@ -299,19 +293,16 @@ export function GitTreeVisualizer({
             className="min-h-[280px] flex-1 overflow-auto rounded-[18px] border border-white/8 bg-black/20"
           >
             <div
-              className="origin-top-left"
               style={{
                 width: scaledWidth,
                 height: scaledHeight,
                 minWidth: compact ? scaledWidth : "100%",
                 minHeight: compact ? scaledHeight : "100%",
-                transform: `scale(${appliedScale})`,
-                transformOrigin: "top left",
               }}
             >
               <svg
                 viewBox={`0 0 ${graph.width} ${graph.height}`}
-                className="h-full w-full"
+                className="block h-full w-full"
                 aria-label="Git multiverse graph"
               >
                 {graph.branchOrder.map((branchName, index) => {
