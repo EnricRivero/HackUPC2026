@@ -526,31 +526,37 @@ export function simulateAction(repository: RepositoryState, action: GitAction) {
   }
 
   if (action.type === "merge") {
+    const currentBranchName = nextState.branchName;
     const sourceBranch =
-      nextState.branches.find((branch) => branch.name !== nextState.branchName) ?? nextState.branches[0];
+      nextState.branches.find((branch) => branch.name === currentBranchName) ?? nextState.branches[0];
+    const mainBranch =
+      nextState.branches.find((branch) => branch.name === "main") ?? nextState.branches[0];
     const sourceHead =
       nextState.commits.find((point) => point.id === sourceBranch?.headId) ?? nextState.commits.at(-1);
+    const mainHead =
+      nextState.commits.find((point) => point.id === mainBranch?.headId) ?? nextState.commits.at(-1);
     const mergePoint = createPoint(
-      `${currentHead?.id ?? "head"}-merge-${sourceHead?.id ?? "source"}`,
-      `Merge con ${sourceBranch?.name ?? "otra rama"}`,
-      `Se unen ${nextState.branchName} y ${sourceBranch?.name ?? "otra rama"}`,
+      `${mainHead?.id ?? "main"}-merge-${sourceHead?.id ?? "source"}`,
+      `Merge de ${sourceBranch?.name ?? "rama actual"} en main`,
+      `La rama ${sourceBranch?.name ?? "actual"} se fusiona dentro de main`,
       "merge",
-      nextState.branchName,
+      "main",
       new Date().toISOString(),
-      currentHead?.id,
+      mainHead?.id,
       sourceHead?.id,
     );
 
     nextState.commits.push(mergePoint);
     nextState.headId = mergePoint.id;
-    updateBranchHead(nextState, nextState.branchName, mergePoint.id);
-    nextState.remoteStatus = `Merge preparado con ${sourceBranch?.name ?? "otra rama"}`;
+    nextState.branchName = "main";
+    updateBranchHead(nextState, "main", mergePoint.id);
+    nextState.remoteStatus = `Merge preparado: ${sourceBranch?.name ?? "rama actual"} entrará en main`;
     nextState.lastAction = "merge";
 
     return {
       nextState,
-      summary: `La línea ${nextState.branchName} absorberá ${sourceBranch?.name ?? "otra rama"} en un nuevo punto de unión.`,
-      backupLabel: currentHead?.label ?? "punto actual",
+      summary: `La rama actual ${sourceBranch?.name ?? "actual"} se fusionará dentro de main.`,
+      backupLabel: mainHead?.label ?? sourceHead?.label ?? "punto actual",
     };
   }
 

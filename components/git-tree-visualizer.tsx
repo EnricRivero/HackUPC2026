@@ -228,23 +228,28 @@ export function GitTreeVisualizer({
       <div className="flex min-h-0 flex-1 flex-col rounded-[26px] border border-white/10 bg-slate-950/45 p-4">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            {current.branches.map((branch) => (
+            {current.branches.map((branch) => {
+              const isMainBranch = branch.name === "main";
+              return (
               <span
                 key={branch.name}
                 className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.2em]"
                 style={{
-                  borderColor: withAlpha(branch.color, "33"),
-                  backgroundColor: withAlpha(branch.color, "18"),
-                  color: branch.color,
+                  borderColor: isMainBranch ? withAlpha("#f8fafc", "5c") : withAlpha(branch.color, "33"),
+                  backgroundColor: isMainBranch ? "rgba(248,250,252,0.12)" : withAlpha(branch.color, "18"),
+                  color: isMainBranch ? "#f8fafc" : branch.color,
+                  boxShadow: isMainBranch ? "0 0 0 1px rgba(255,255,255,0.12) inset" : undefined,
                 }}
               >
                 <span
                   className="h-2.5 w-2.5 rounded-full"
-                  style={{ backgroundColor: branch.color }}
+                  style={{ backgroundColor: isMainBranch ? "#f8fafc" : branch.color }}
                 />
                 {branch.name}
+                {isMainBranch ? <span className="text-[9px] text-slate-300">ORIGINAL</span> : null}
               </span>
-            ))}
+            );
+            })}
           </div>
 
           {!compact ? (
