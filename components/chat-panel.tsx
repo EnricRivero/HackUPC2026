@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { Mic, Send, Sparkles, Volume2 } from "lucide-react";
 import { motion } from "framer-motion";
 import type { ChatMessage } from "@/lib/types";
@@ -23,8 +24,23 @@ export function ChatPanel({
   onMicClick,
   suggestions,
 }: ChatPanelProps) {
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [messages]);
+
   return (
-    <section className="panel flex h-full min-h-[720px] flex-col p-6">
+    <section className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
@@ -39,7 +55,10 @@ export function ChatPanel({
         </div>
       </div>
 
-      <div className="flex-1 space-y-4 overflow-y-auto pr-1">
+      <div
+        ref={scrollContainerRef}
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-2"
+      >
         {messages.map((message) => (
           <motion.div
             key={message.id}

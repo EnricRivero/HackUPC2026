@@ -199,8 +199,8 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(99,102,241,0.14),transparent_35%),linear-gradient(180deg,#07111f,#020617)] px-6 py-8 text-slate-100 md:px-10">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(99,102,241,0.14),transparent_35%),linear-gradient(180deg,#07111f,#020617)] px-6 py-8 text-slate-100 md:px-10 xl:h-screen xl:overflow-hidden">
+      <div className="mx-auto flex max-w-7xl flex-col gap-6 xl:h-full">
         <motion.header
           className="flex flex-col gap-5 rounded-[32px] border border-white/10 bg-white/6 p-6 shadow-2xl shadow-slate-950/30 backdrop-blur-xl lg:flex-row lg:items-center lg:justify-between"
           initial={{ opacity: 0, y: 16 }}
@@ -238,9 +238,9 @@ export default function Home() {
           </div>
         </motion.header>
 
-        <section className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)_380px]">
+        <section className="grid gap-6 xl:min-h-0 xl:flex-1 xl:grid-cols-[320px_minmax(0,1fr)_380px]">
           <motion.aside
-            className="rounded-[32px] border border-white/10 bg-white/6 p-5 shadow-xl shadow-slate-950/20 backdrop-blur-xl"
+            className="rounded-[32px] border border-white/10 bg-white/6 p-5 shadow-xl shadow-slate-950/20 backdrop-blur-xl xl:min-h-0 xl:overflow-hidden"
             initial={{ opacity: 0, x: -18 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.05 }}
@@ -258,7 +258,7 @@ export default function Home() {
           </motion.aside>
 
           <motion.section
-            className="rounded-[32px] border border-white/10 bg-white/6 p-5 shadow-xl shadow-slate-950/20 backdrop-blur-xl"
+            className="rounded-[32px] border border-white/10 bg-white/6 p-5 shadow-xl shadow-slate-950/20 backdrop-blur-xl xl:min-h-0 xl:overflow-auto"
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
@@ -284,7 +284,7 @@ export default function Home() {
           </motion.section>
 
           <motion.aside
-            className="rounded-[32px] border border-white/10 bg-white/6 p-5 shadow-xl shadow-slate-950/20 backdrop-blur-xl"
+            className="rounded-[32px] border border-white/10 bg-white/6 p-5 shadow-xl shadow-slate-950/20 backdrop-blur-xl xl:min-h-0 xl:overflow-hidden"
             initial={{ opacity: 0, x: 18 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.15 }}

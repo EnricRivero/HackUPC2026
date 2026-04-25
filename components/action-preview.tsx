@@ -41,6 +41,7 @@ function buildAfterLines(state: RepositoryState, action?: GitAction | null) {
 
 export function ActionPreview({ before, after, action }: ActionPreviewProps) {
   const Icon = action ? iconByType[action.type] : GitCommitHorizontal;
+  const description = action ? action.naturalExplanation : null;
 
   return (
     <section className="flex min-h-[320px] flex-col justify-between rounded-[28px] border border-white/10 bg-slate-950/35 p-6">
@@ -50,11 +51,7 @@ export function ActionPreview({ before, after, action }: ActionPreviewProps) {
           <h2 className="mt-3 text-2xl font-semibold text-white">
             {action ? action.label : "Before / After"}
           </h2>
-          <p className="mt-3 max-w-2xl text-sm text-slate-300">
-            {action
-              ? action.naturalExplanation
-              : "Escribe o dicta algo como \"Guarda lo que he hecho ahora\" y GitEase mostrará la copia de seguridad antes de ejecutar la acción."}
-          </p>
+          {description ? <p className="mt-3 max-w-2xl text-sm text-slate-300">{description}</p> : null}
         </div>
 
         <motion.div
