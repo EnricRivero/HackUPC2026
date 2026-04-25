@@ -101,6 +101,68 @@ function buildBranches(commits: SavePoint[]) {
   }));
 }
 
+type RawCommit = {
+  id: string;
+  parentIds: string[];
+  timestamp: string;
+  subject: string;
+};
+
+function readLocalBranches(cwd: string) {
+  const refs = runGit(
+    ["for-each-ref", "--format=%(refname:short)|||%(objectname)", "refs/heads"],
+    cwd,
+  );
+
+  if (!refs.ok || !refs.stdout) {
+    return [] as Array<{ name: string; headId: string }>;
+  }
+
+  return refs.stdout
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [name, headId] = line.split("|||");
+      return {
+        name: name.trim(),
+        headId: headId.trim(),
+      };
+    });
+}
+
+function assignCommitBranches(commits: RawCommit[], branchName: string, cwd: string) {
+  const commitMap = new Map(commits.map((commit) => [commit.id, commit]));
+  const localBranches = readLocalBranches(cwd);
+  const branchAssignments = new Map<string, string>();
+
+  const markFirstParentChain = (startId: string, targetBranch: string) => {
+    let currentId: string | undefined = startId;
+    while (currentId && !branchAssignments.has(currentId)) {
+      branchAssignments.set(currentId, targetBranch);
+      currentId = commitMap.get(currentId)?.parentIds[0];
+    }
+  };
+
+  const mainBranch = localBranches.find((branch) => branch.name === "main");
+  if (mainBranch) {
+    markFirstParentChain(mainBranch.headId, "main");
+  }
+
+  for (const branch of localBranches) {
+    if (branch.name === "main") {
+      continue;
+    }
+    markFirstParentChain(branch.headId, branch.name);
+  }
+
+  const fallbackBranch = branchName === "HEAD" ? "main" : branchName;
+  return {
+    branchAssignments,
+    localBranches,
+    fallbackBranch,
+  };
+}
+
 function currentBranchName() {
   const branch = runGit(["branch", "--show-current"]);
   return branch.ok && branch.stdout ? branch.stdout : "HEAD";
@@ -169,7 +231,7 @@ export function readRepositoryState(): RepositoryState {
     [
       "log",
       "--date=iso-strict",
-      "--pretty=format:%H|||%P|||%an|||%ad|||%s|||%D",
+      "--pretty=format:%H|||%P|||%ad|||%s",
       "--all",
       "--reverse",
       "--max-count=80",
@@ -177,32 +239,39 @@ export function readRepositoryState(): RepositoryState {
     cwd,
   );
 
-  const commits: SavePoint[] = log.ok
+  const rawCommits: RawCommit[] = log.ok
     ? log.stdout
         .split("\n")
         .filter(Boolean)
-        .map((line, index) => {
-          const [hash, parents, , rawDate, subject, decorations] = line.split("|||");
-          const branchFromDecoration =
-            decorations
-              ?.split(",")
-              .map((item) => item.trim())
-              .find((item) => !item.startsWith("HEAD") && !item.startsWith("origin/"))
-              ?.replace("tag: ", "") ?? branchName;
-          const parentId = parents?.split(" ").filter(Boolean)[0];
-          const type = mapGitType(subject, branchFromDecoration, branchName);
-
+        .map((line) => {
+          const [hash, parents, rawDate, subject] = line.split("|||");
           return {
             id: hash,
-            label: labelForCommit(index, subject),
-            description: descriptionForCommit(subject),
+            parentIds: parents?.split(" ").filter(Boolean) ?? [],
             timestamp: formatTimestamp(rawDate),
-            type,
-            branch: branchFromDecoration,
-            parentId,
+            subject,
           };
         })
     : [];
+
+  const { branchAssignments, localBranches, fallbackBranch } = assignCommitBranches(rawCommits, branchName, cwd);
+
+  const commits: SavePoint[] = rawCommits.map((commit, index) => {
+    const assignedBranch = branchAssignments.get(commit.id) ?? fallbackBranch;
+    const parentId = commit.parentIds[0];
+    const type = mapGitType(commit.subject, assignedBranch, fallbackBranch);
+
+    return {
+      id: commit.id,
+      label: labelForCommit(index, commit.subject),
+      description: descriptionForCommit(commit.subject),
+      timestamp: commit.timestamp,
+      type,
+      branch: assignedBranch,
+      parentId,
+      targetId: commit.parentIds[1],
+    };
+  });
 
   const changedFilesRaw = runGit(["status", "--porcelain"], cwd);
   const changedFiles = changedFilesRaw.ok ? parseChangedFiles(changedFilesRaw.stdout) : [];
@@ -217,7 +286,15 @@ export function readRepositoryState(): RepositoryState {
       ? runGit(["rev-parse", "--verify", "origin/" + (detached ? "main" : branchName)], cwd).stdout
       : undefined;
 
-  const branches = buildBranches(commits);
+  const branches =
+    localBranches.length > 0
+      ? localBranches.map((branch, index) => ({
+          name: branch.name,
+          headId: branch.headId,
+          baseId: commits.find((commit) => commit.id === branch.headId)?.parentId,
+          color: branchColor(index),
+        }))
+      : buildBranches(commits);
 
   return {
     branchName: detached ? commits.find((point) => point.id === headId)?.branch ?? "detached" : branchName,
@@ -351,6 +428,18 @@ export function mergeBranch(sourceBranch: string) {
   const checkoutMain = runGit(["checkout", "main"]);
   if (!checkoutMain.ok) {
     throw new Error(checkoutMain.stderr || "No pude cambiar a main antes del merge.");
+  }
+
+  const remoteNames = runGit(["remote"]);
+  if (remoteNames.ok && remoteNames.stdout.includes("origin")) {
+    const pullMain = runGit(["pull", "--ff-only", "origin", "main"]);
+    if (!pullMain.ok) {
+      runGit(["checkout", currentBranch]);
+      throw new Error(
+        pullMain.stderr ||
+          "No pude actualizar main desde remoto antes del merge. Revisa si hay cambios pendientes o conflictos.",
+      );
+    }
   }
 
   const merge = runGit(["merge", safeBranch]);
