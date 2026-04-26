@@ -28,7 +28,7 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
-
+/* Ensure buttons and inputs inherit the font from their parent elements */
 button,
 input {
   font: inherit;
