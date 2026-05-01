@@ -1,507 +1,361 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { CloudUpload, FolderGit2, ShieldAlert, ShieldCheck, Sparkles } from "lucide-react";
-import { ChatPanel } from "@/components/chat-panel";
-import { ConfirmationModal } from "@/components/confirmation-modal";
-import { GitTreeVisualizer } from "@/components/git-tree-visualizer";
-import {
-  checkoutToPoint,
-  createAssistantConfirmation,
-  createAssistantResult,
-  createInitialRepository,
-  createInitialMessages,
-  createUnknownIntentMessage,
-  getActionFromInput,
-  simulateAction,
-} from "@/lib/git-simulator";
-import type {
-  ChatMessage,
-  GitOperationResponse,
-  PendingAction,
-  RepoApiResponse,
-  RepositoryState,
-  RepoStatusResponse,
-} from "@/lib/types";
+import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import { Crown, Shield, Sparkles, Swords } from "lucide-react";
 
-declare global {
-  interface Window {
-    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
-    SpeechRecognition?: new () => SpeechRecognitionLike;
-  }
-}
+type Operator = "+" | "-" | "x" | "/";
 
-type SpeechRecognitionLike = {
-  lang: string;
-  interimResults: boolean;
-  maxAlternatives: number;
-  start: () => void;
-  stop: () => void;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onend: (() => void) | null;
-  onerror: (() => void) | null;
+type HistoryItem = {
+  expression: string;
+  result: string;
 };
 
-type SpeechRecognitionEventLike = {
-  results: ArrayLike<{
-    0: {
-      transcript: string;
-    };
-  }>;
+const operatorSymbols: Record<Operator, string> = {
+  "+": "+",
+  "-": "-",
+  x: "x",
+  "/": "÷",
 };
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    headers: {
-      "Content-Type": "application/json",
-    },
-    ...init,
-  });
-
-  const data = (await response.json()) as T & { error?: string };
-
-  if (!response.ok) {
-    throw new Error(data.error || "No se pudo completar la operación Git.");
+const formatNumber = (value: number) => {
+  if (!Number.isFinite(value)) {
+    return "Error";
   }
 
-  return data;
-}
+  return new Intl.NumberFormat("es-ES", {
+    maximumFractionDigits: 8,
+    useGrouping: false,
+  }).format(value);
+};
+
+const normalizeNumber = (value: string) => Number(value.replace(",", "."));
+
+const calculate = (firstValue: number, secondValue: number, operator: Operator) => {
+  switch (operator) {
+    case "+":
+      return firstValue + secondValue;
+    case "-":
+      return firstValue - secondValue;
+    case "x":
+      return firstValue * secondValue;
+    case "/":
+      return secondValue === 0 ? Number.NaN : firstValue / secondValue;
+    default:
+      return secondValue;
+  }
+};
 
 export default function Home() {
-  const [repository, setRepository] = useState<RepositoryState>(createInitialRepository());
-  const [messages, setMessages] = useState<ChatMessage[]>(createInitialMessages());
-  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
-  const [input, setInput] = useState("");
-  const [isListening, setIsListening] = useState(false);
-  const [isLoadingRepo, setIsLoadingRepo] = useState(true);
-  const [isConnected, setIsConnected] = useState(false);
-  const [isExecuting, setIsExecuting] = useState(false);
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const hasWelcomedRef = useRef(false);
+  const [display, setDisplay] = useState("0");
+  const [storedValue, setStoredValue] = useState<number | null>(null);
+  const [operator, setOperator] = useState<Operator | null>(null);
+  const [waitingForOperand, setWaitingForOperand] = useState(false);
+  const [expression, setExpression] = useState("Listo para la batalla");
+  const [history, setHistory] = useState<HistoryItem[]>([]);
 
-  const stats = useMemo(
-    () => [
-      {
-        label: "Puntos de guardado",
-        value: repository.commits.length.toString().padStart(2, "0"),
-        icon: ShieldCheck,
-      },
-      {
-        label: "Cambios preparados",
-        value: String(repository.stagedChanges),
-        icon: Sparkles,
-      },
-      {
-        label: "Estado de nube",
-        value: repository.remoteStatus || (repository.lastAction === "push" ? "Sincronizado" : "Local"),
-        icon: CloudUpload,
-      },
-    ],
-    [repository],
+  const activeOperatorLabel = useMemo(
+    () => (operator ? operatorSymbols[operator] : "Sin operador"),
+    [operator],
   );
 
-  const addAssistantMessage = useCallback(
-    (
-      content: string,
-      kind: ChatMessage["kind"] = "normal",
-      subject = kind === "fallback" ? 'GitGuide "Error"' : 'GitGuide "Estado"',
-    ) => {
-    setMessages((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content,
-        timestamp: new Date().toISOString(),
-        subject,
-        kind,
-      },
-    ]);
-    },
-    [],
-  );
+  const pushHistory = (newExpression: string, result: string) => {
+    setHistory((current) => [{ expression: newExpression, result }, ...current].slice(0, 4));
+  };
 
-  const loadRepository = useCallback(
-    async (quiet = false) => {
-      if (!quiet) {
-        setIsLoadingRepo(true);
-      }
+  const clearCalculator = () => {
+    setDisplay("0");
+    setStoredValue(null);
+    setOperator(null);
+    setWaitingForOperand(false);
+    setExpression("Listo para la batalla");
+  };
 
-      try {
-        const data = await apiFetch<RepoApiResponse>("/api/repo");
-        setRepository(data.repository);
-        setIsConnected(true);
-
-        if (!hasWelcomedRef.current) {
-          hasWelcomedRef.current = true;
-          setMessages([
-            {
-              id: crypto.randomUUID(),
-              role: "assistant",
-              content:
-                `Conectado con tu repositorio real en ${data.repository.repoPath ?? "/workspace"}.\n\n` +
-                `Rama activa: ${data.repository.branchName}. ` +
-                `Tienes ${data.repository.commits.length} puntos visibles en la historia y ` +
-                `${data.repository.changedFiles?.length ?? 0} archivo(s) con cambios.`,
-              timestamp: new Date().toISOString(),
-              subject: 'GitGuide "Sincronización"',
-              kind: "normal",
-            },
-          ]);
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "No se pudo conectar con la capa de Git real.";
-        setIsConnected(false);
-        if (!quiet) {
-          addAssistantMessage(
-            `No he podido conectar con Git real todavía.\n\n${message}\n\n` +
-              "Seguiré mostrando la interfaz, pero las operaciones reales no estarán disponibles hasta que el repositorio sea accesible.",
-            "fallback",
-          );
-        }
-      } finally {
-        if (!quiet) {
-          setIsLoadingRepo(false);
-        }
-      }
-    },
-    [addAssistantMessage],
-  );
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
+  const inputDigit = (digit: string) => {
+    if (display === "Error" || waitingForOperand) {
+      setDisplay(digit);
+      setWaitingForOperand(false);
       return;
     }
 
-    const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    setDisplay((current) => (current === "0" ? digit : `${current}${digit}`));
+  };
 
-    if (!Recognition) {
+  const inputDecimal = () => {
+    if (display === "Error" || waitingForOperand) {
+      setDisplay("0,");
+      setWaitingForOperand(false);
       return;
     }
 
-    const recognition = new Recognition();
-    recognition.lang = "es-ES";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.onresult = (event) => {
-      const transcript = event.results[0]?.[0]?.transcript?.trim();
+    setDisplay((current) => (current.includes(",") ? current : `${current},`));
+  };
 
-      if (!transcript) {
-        return;
-      }
+  const backspace = () => {
+    if (display === "Error" || waitingForOperand) {
+      setDisplay("0");
+      setWaitingForOperand(false);
+      return;
+    }
 
-      setInput(transcript);
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: `Te escuché decir: "${transcript}". Puedes enviarlo o editarlo antes de confirmar.`,
-          timestamp: new Date().toISOString(),
-          subject: 'GitGuide "Voz detectada"',
-          kind: "transcript",
-        },
-      ]);
-    };
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-    recognition.onerror = () => {
-      setIsListening(false);
-    };
-    recognitionRef.current = recognition;
-  }, []);
+    setDisplay((current) => (current.length > 1 ? current.slice(0, -1) : "0"));
+  };
+
+  const toggleSign = () => {
+    if (display === "0" || display === "Error") {
+      return;
+    }
+
+    setDisplay((current) => (current.startsWith("-") ? current.slice(1) : `-${current}`));
+  };
+
+  const applyInstantOperation = (kind: "square" | "sqrt" | "percent") => {
+    const currentValue = normalizeNumber(display);
+    let result: number;
+    let nextExpression: string;
+
+    if (kind === "square") {
+      result = currentValue * currentValue;
+      nextExpression = `${display}²`;
+    } else if (kind === "sqrt") {
+      result = currentValue < 0 ? Number.NaN : Math.sqrt(currentValue);
+      nextExpression = `√${display}`;
+    } else {
+      result = currentValue / 100;
+      nextExpression = `${display}%`;
+    }
+
+    const formattedResult = formatNumber(result);
+    setDisplay(formattedResult);
+    setExpression(nextExpression);
+    setWaitingForOperand(true);
+    pushHistory(nextExpression, formattedResult);
+  };
+
+  const chooseOperator = (nextOperator: Operator) => {
+    const inputValue = normalizeNumber(display);
+
+    if (storedValue === null) {
+      setStoredValue(inputValue);
+      setExpression(`${display} ${operatorSymbols[nextOperator]}`);
+    } else if (operator) {
+      const result = calculate(storedValue, inputValue, operator);
+      const formattedResult = formatNumber(result);
+      const nextExpression = `${formatNumber(storedValue)} ${operatorSymbols[operator]} ${display}`;
+
+      setStoredValue(result);
+      setDisplay(formattedResult);
+      setExpression(`${formattedResult} ${operatorSymbols[nextOperator]}`);
+      pushHistory(nextExpression, formattedResult);
+    }
+
+    setOperator(nextOperator);
+    setWaitingForOperand(true);
+  };
+
+  const performCalculation = () => {
+    if (operator === null || storedValue === null) {
+      return;
+    }
+
+    const inputValue = normalizeNumber(display);
+    const result = calculate(storedValue, inputValue, operator);
+    const formattedResult = formatNumber(result);
+    const solvedExpression = `${formatNumber(storedValue)} ${operatorSymbols[operator]} ${display}`;
+
+    setDisplay(formattedResult);
+    setExpression(`${solvedExpression} =`);
+    setStoredValue(null);
+    setOperator(null);
+    setWaitingForOperand(true);
+    pushHistory(solvedExpression, formattedResult);
+  };
 
   useEffect(() => {
-    void loadRepository(false);
-  }, [loadRepository]);
-
-  useEffect(() => {
-    const interval = window.setInterval(async () => {
-      if (!isConnected || pendingAction || isExecuting) {
-        return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (/^\d$/.test(event.key)) {
+        inputDigit(event.key);
+      } else if (event.key === "," || event.key === ".") {
+        inputDecimal();
+      } else if (event.key === "Backspace") {
+        backspace();
+      } else if (event.key === "Escape") {
+        clearCalculator();
+      } else if (event.key === "Enter" || event.key === "=") {
+        performCalculation();
+      } else if (event.key === "+") {
+        chooseOperator("+");
+      } else if (event.key === "-") {
+        chooseOperator("-");
+      } else if (event.key === "*") {
+        chooseOperator("x");
+      } else if (event.key === "/") {
+        event.preventDefault();
+        chooseOperator("/");
       }
+    };
 
-      try {
-        await loadRepository(true);
-      } catch {
-        // silent polling failure
-      }
-    }, 8000);
+    window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      window.clearInterval(interval);
+      window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isConnected, pendingAction, isExecuting, loadRepository]);
-
-  const handleSubmit = (input: string) => {
-    const trimmed = input.trim();
-
-    if (!trimmed) {
-      return;
-    }
-
-    const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: trimmed,
-      timestamp: new Date().toISOString(),
-    };
-
-    const action = getActionFromInput(trimmed, repository);
-
-    if (!action) {
-      setMessages((current) => [...current, userMessage, createUnknownIntentMessage(trimmed)]);
-      setInput("");
-      return;
-    }
-
-    if (action.type === "commit" && repository.changedFiles?.length === 0 && repository.stagedChanges === 0) {
-      setMessages((current) => [
-        ...current,
-        userMessage,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content:
-            "No hay cambios para guardar ahora mismo. Guarda primero algún archivo en tu editor y luego vuelve a pedírmelo.",
-          timestamp: new Date().toISOString(),
-          subject: 'GitGuide "Error de guardado"',
-          kind: "fallback",
-        },
-      ]);
-      setInput("");
-      return;
-    }
-
-    const simulation = simulateAction(repository, action);
-
-    setMessages((current) => [...current, userMessage, createAssistantConfirmation(action)]);
-    setPendingAction({
-      action,
-      before: repository,
-      after: simulation.nextState,
-      summary: simulation.summary,
-      backupLabel: simulation.backupLabel,
-    });
-    setInput("");
-  };
-
-  const handleConfirm = async () => {
-    if (!pendingAction) {
-      return;
-    }
-
-    setIsExecuting(true);
-
-    try {
-      let response: GitOperationResponse;
-      if (pendingAction.action.type === "commit") {
-        const commitMessage = input.trim() || "GitGuide: Guardado desde lenguaje natural";
-        response = await apiFetch<GitOperationResponse>("/api/commit", {
-          method: "POST",
-          body: JSON.stringify({ message: commitMessage }),
-        });
-      } else if (pendingAction.action.type === "push") {
-        response = await apiFetch<GitOperationResponse>("/api/push", {
-          method: "POST",
-        });
-      } else if (pendingAction.action.type === "restore") {
-        response = await apiFetch<GitOperationResponse>("/api/reset", {
-          method: "POST",
-          body: JSON.stringify({ mode: "soft" }),
-        });
-      } else if (pendingAction.action.type === "merge") {
-        response = await apiFetch<GitOperationResponse>("/api/merge", {
-          method: "POST",
-          body: JSON.stringify({
-            sourceBranch: pendingAction.action.targetBranch ?? pendingAction.action.gitTranslation[0]?.split(" ").at(-1),
-          }),
-        });
-      } else if (pendingAction.action.type === "rebase") {
-        response = await apiFetch<GitOperationResponse>("/api/rebase", {
-          method: "POST",
-          body: JSON.stringify({
-            onto: pendingAction.action.targetBranch ?? pendingAction.action.gitTranslation[0]?.split(" ").at(-1),
-          }),
-        });
-      } else {
-        const branchName = pendingAction.action.gitTranslation[0]?.split(" ").at(-1) ?? "idea-gitguide";
-        response = await apiFetch<GitOperationResponse>("/api/branch", {
-          method: "POST",
-          body: JSON.stringify({ name: branchName }),
-        });
-      }
-
-      setRepository(response.repository);
-      setMessages((current) => [...current, createAssistantResult(pendingAction.action, response.message)]);
-      setPendingAction(null);
-      await loadRepository(true);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo ejecutar la operación Git.";
-      addAssistantMessage(`He intentado ejecutar la acción real, pero Git devolvió este error:\n\n${message}`, "fallback");
-    } finally {
-      setIsExecuting(false);
-    }
-  };
-
-  const handleClose = () => {
-    setPendingAction(null);
-  };
-
-  const handleCheckoutSelect = (pointId: string) => {
-    const targetPoint = repository.commits.find((point) => point.id === pointId);
-    if (!targetPoint) {
-      return;
-    }
-
-    const nextRepository = checkoutToPoint(repository, pointId);
-    setRepository(nextRepository);
-    setMessages((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: `He movido el HEAD hacia ${targetPoint.label}. Es una simulación visual de checkout para que veas cómo cambiaría tu historia.`,
-        timestamp: new Date().toISOString(),
-        subject: 'GitGuide "Checkout visual"',
-        kind: "result",
-      },
-    ]);
-  };
-
-  const handleMicClick = () => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    if (recognitionRef.current) {
-      if (isListening) {
-        recognitionRef.current.stop();
-        setIsListening(false);
-        return;
-      }
-
-      recognitionRef.current.start();
-      setIsListening(true);
-      return;
-    }
-
-    setIsListening(true);
-    window.setTimeout(() => {
-      const fallbackTranscript = "Súbelo a internet";
-      setInput(fallbackTranscript);
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: `Modo demo: he simulado la voz con "${fallbackTranscript}".`,
-          timestamp: new Date().toISOString(),
-          subject: 'GitGuide "Voz demo"',
-          kind: "transcript",
-        },
-      ]);
-      setIsListening(false);
-    }, 1200);
-  };
-
-  const statusBadge = isConnected
-    ? {
-        icon: <FolderGit2 className="h-3.5 w-3.5" />,
-        text: isLoadingRepo ? "Conectando con Git..." : "Git real conectado",
-        className: "border border-cyan-400/30 bg-cyan-400/10 text-cyan-100",
-      }
-    : {
-        icon: <ShieldAlert className="h-3.5 w-3.5" />,
-        text: "Modo desconectado",
-        className: "border border-amber-400/30 bg-amber-400/10 text-amber-100",
-      };
+  });
 
   return (
-    <main className="min-h-[100dvh] bg-[radial-gradient(circle_at_top,rgba(99,102,241,0.14),transparent_35%),linear-gradient(180deg,#07111f,#020617)] px-4 py-6 text-slate-100 sm:px-6 lg:h-[100dvh] lg:overflow-hidden xl:px-8">
-      <div className="mx-auto flex h-full w-full max-w-[1720px] flex-col gap-6">
-        <motion.header
-          className="flex flex-col gap-5 rounded-[32px] border border-white/10 bg-white/6 p-6 shadow-2xl shadow-slate-950/30 backdrop-blur-xl lg:flex-row lg:items-center lg:justify-between"
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
+    <main className="relative min-h-[100dvh] overflow-hidden bg-[#102a5c] px-4 py-6 text-white sm:px-6 lg:px-8">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,218,80,0.28),transparent_30%),radial-gradient(circle_at_top_right,rgba(65,180,255,0.3),transparent_28%),linear-gradient(145deg,#12356d_0%,#071a38_58%,#3f210f_100%)]" />
+      <div className="absolute left-1/2 top-10 h-72 w-72 -translate-x-1/2 rounded-full bg-yellow-300/20 blur-3xl" />
+      <div className="absolute inset-x-0 bottom-0 h-36 bg-[linear-gradient(180deg,transparent,rgba(126,67,24,0.72))]" />
+
+      <section className="relative mx-auto grid min-h-[calc(100dvh-3rem)] max-w-6xl items-center gap-8 lg:grid-cols-[1fr_430px]">
+        <motion.div
+          className="space-y-7"
+          initial={{ opacity: 0, x: -24 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.55 }}
         >
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
-                <Sparkles className="h-3.5 w-3.5" />
-                GitGuide
-              </span>
-              <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${statusBadge.className}`}>
-                {statusBadge.icon}
-                {statusBadge.text}
-              </span>
-            </div>
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight text-white md:text-4xl">
-                GitGuide
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
-                Historial de versiones de tu proyecto
-              </p>
-            </div>
+          <div className="inline-flex items-center gap-2 rounded-full border-2 border-yellow-300/70 bg-blue-950/60 px-4 py-2 text-sm font-black uppercase tracking-[0.2em] text-yellow-200 shadow-[0_8px_0_rgba(29,53,109,0.75)]">
+            <Crown className="h-5 w-5" />
+            Calculadora Royale
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            {stats.map(({ label, value, icon: Icon }) => (
+          <div className="max-w-2xl space-y-4">
+            <h1 className="text-5xl font-black leading-tight tracking-tight drop-shadow-[0_6px_0_rgba(32,51,106,0.9)] sm:text-6xl">
+              Suma, resta y conquista la arena.
+            </h1>
+            <p className="text-lg font-semibold leading-8 text-blue-50/90">
+              Una calculadora simple de matematicas con estilo de arena fantastica: escudos,
+              oro, azul rey y botones grandes para usarla desde el navegador al correr el
+              proyecto en Visual Studio.
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            {[
+              { icon: Swords, label: "Operaciones", value: "+  -  x  ÷" },
+              { icon: Shield, label: "Extras", value: "√  x²  %" },
+              { icon: Sparkles, label: "Atajos", value: "Teclado" },
+            ].map(({ icon: Icon, label, value }) => (
               <div
                 key={label}
-                className="min-w-[160px] rounded-3xl border border-white/10 bg-slate-950/40 px-4 py-4"
+                className="rounded-[28px] border-2 border-yellow-200/60 bg-white/12 p-4 shadow-[0_10px_0_rgba(35,54,111,0.65)] backdrop-blur"
               >
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <Icon className="h-4 w-4 text-indigo-300" />
-                  {label}
-                </div>
-                <div className="mt-3 text-2xl font-semibold text-white">{value}</div>
+                <Icon className="mb-3 h-7 w-7 text-yellow-200" />
+                <p className="text-xs font-black uppercase tracking-[0.22em] text-blue-100/70">{label}</p>
+                <p className="mt-1 text-xl font-black text-white">{value}</p>
               </div>
             ))}
           </div>
-        </motion.header>
+        </motion.div>
 
-        <section className="grid gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] lg:items-stretch">
-          <motion.section
-            className="min-h-[640px] lg:min-h-0 lg:h-full lg:w-full"
-            initial={{ opacity: 0, x: -18 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.05 }}
-          >
-            <GitTreeVisualizer
-              repository={repository}
-              pending={pendingAction?.after}
-              onCheckoutSelect={handleCheckoutSelect}
-            />
-          </motion.section>
+        <motion.div
+          className="rounded-[36px] border-[6px] border-[#f5c542] bg-[#234b93] p-4 shadow-[0_22px_0_#18315f,0_34px_40px_rgba(0,0,0,0.45)]"
+          initial={{ opacity: 0, scale: 0.94, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.55, delay: 0.1 }}
+        >
+          <div className="rounded-[28px] border-4 border-blue-950/50 bg-[#10275c] p-4">
+            <div className="rounded-[24px] border-4 border-[#6fb6ff] bg-[#091a3f] p-5 text-right shadow-inner">
+              <p className="min-h-6 truncate text-sm font-black uppercase tracking-[0.2em] text-yellow-200/80">
+                {expression}
+              </p>
+              <output className="mt-2 block min-h-16 truncate text-5xl font-black tracking-tight text-white drop-shadow-[0_4px_0_rgba(0,0,0,0.35)]">
+                {display}
+              </output>
+            </div>
 
-          <motion.aside
-            className="min-h-[640px] rounded-[32px] border border-white/10 bg-white/6 p-5 shadow-xl shadow-slate-950/20 backdrop-blur-xl lg:justify-self-end lg:min-h-0 lg:h-full lg:w-full lg:max-w-[360px] lg:overflow-hidden"
-            initial={{ opacity: 0, x: 18 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.15 }}
-          >
-            <ChatPanel
-              messages={messages}
-              input={input}
-              isListening={isListening}
-              onInputChange={setInput}
-              onSubmit={() => handleSubmit(input)}
-              onMicClick={handleMicClick}
-            />
-          </motion.aside>
-        </section>
-      </div>
+            <div className="mt-4 grid grid-cols-4 gap-3">
+              <CalcButton label="AC" tone="danger" onClick={clearCalculator} />
+              <CalcButton label="⌫" tone="royal" onClick={backspace} />
+              <CalcButton label="%" tone="royal" onClick={() => applyInstantOperation("percent")} />
+              <CalcButton label="÷" tone="operator" active={operator === "/"} onClick={() => chooseOperator("/")} />
 
-      <AnimatePresence>
-        {pendingAction && (
-          <ConfirmationModal pending={pendingAction} onClose={handleClose} onConfirm={handleConfirm} />
-        )}
-      </AnimatePresence>
+              <CalcButton label="7" onClick={() => inputDigit("7")} />
+              <CalcButton label="8" onClick={() => inputDigit("8")} />
+              <CalcButton label="9" onClick={() => inputDigit("9")} />
+              <CalcButton label="x" tone="operator" active={operator === "x"} onClick={() => chooseOperator("x")} />
+
+              <CalcButton label="4" onClick={() => inputDigit("4")} />
+              <CalcButton label="5" onClick={() => inputDigit("5")} />
+              <CalcButton label="6" onClick={() => inputDigit("6")} />
+              <CalcButton label="-" tone="operator" active={operator === "-"} onClick={() => chooseOperator("-")} />
+
+              <CalcButton label="1" onClick={() => inputDigit("1")} />
+              <CalcButton label="2" onClick={() => inputDigit("2")} />
+              <CalcButton label="3" onClick={() => inputDigit("3")} />
+              <CalcButton label="+" tone="operator" active={operator === "+"} onClick={() => chooseOperator("+")} />
+
+              <CalcButton label="+/-" tone="royal" onClick={toggleSign} />
+              <CalcButton label="0" onClick={() => inputDigit("0")} />
+              <CalcButton label="," onClick={inputDecimal} />
+              <CalcButton label="=" tone="equals" onClick={performCalculation} />
+
+              <CalcButton label="√" tone="royal" onClick={() => applyInstantOperation("sqrt")} />
+              <CalcButton label="x²" tone="royal" onClick={() => applyInstantOperation("square")} />
+              <div className="col-span-2 rounded-2xl border-2 border-blue-200/30 bg-blue-950/45 p-3 text-center">
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-100/60">
+                  Operador
+                </p>
+                <p className="text-xl font-black text-yellow-200">{activeOperatorLabel}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-[22px] border-2 border-yellow-200/40 bg-blue-950/45 p-4">
+              <p className="mb-2 text-xs font-black uppercase tracking-[0.2em] text-yellow-200">
+                Historial de batalla
+              </p>
+              {history.length === 0 ? (
+                <p className="text-sm font-semibold text-blue-100/70">Aun no hay operaciones.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {history.map((item, index) => (
+                    <li
+                      key={`${item.expression}-${index}`}
+                      className="flex items-center justify-between gap-3 rounded-xl bg-white/8 px-3 py-2 text-sm"
+                    >
+                      <span className="truncate text-blue-100/75">{item.expression}</span>
+                      <span className="font-black text-white">{item.result}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      </section>
     </main>
+  );
+}
+
+function CalcButton({
+  label,
+  onClick,
+  tone = "number",
+  active = false,
+}: {
+  label: string;
+  onClick: () => void;
+  tone?: "number" | "operator" | "equals" | "danger" | "royal";
+  active?: boolean;
+}) {
+  const classes = {
+    number: "border-blue-100 bg-[#f7fbff] text-[#14336f] shadow-[#96b7db]",
+    operator: "border-yellow-200 bg-[#f5b52b] text-[#552b08] shadow-[#9d5b11]",
+    equals: "border-emerald-200 bg-[#37c875] text-[#07351e] shadow-[#14753f]",
+    danger: "border-red-200 bg-[#ff5f57] text-white shadow-[#9a2421]",
+    royal: "border-blue-100 bg-[#6fb6ff] text-[#08295c] shadow-[#27649f]",
+  }[tone];
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`min-h-14 rounded-2xl border-2 px-2 text-xl font-black transition duration-150 hover:-translate-y-0.5 hover:brightness-110 active:translate-y-1 active:shadow-none ${classes} ${
+        active ? "ring-4 ring-yellow-100" : ""
+      }`}
+    >
+      {label}
+    </button>
   );
 }

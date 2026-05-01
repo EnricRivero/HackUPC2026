@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "GitGuide",
-  description: "MVP para traducir Git a lenguaje humano",
+  title: "Calculadora Royale",
+  description: "Calculadora simple de matematicas con estetica de arena fantastica.",
 };
 
 export default function RootLayout({
